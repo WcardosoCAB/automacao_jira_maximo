@@ -70,6 +70,7 @@ def ler_maximo(caminho_pasta, colunas_esperadas):
         raise FileNotFoundError("Erro ao processar o Maximo")
     return df_maximo
 
+
 def aplicar_formatacao_excel(caminho_arquivo, abas):
     wb = load_workbook(caminho_arquivo)
     fonte_normal = Font(name="Montserrat", size=11)
