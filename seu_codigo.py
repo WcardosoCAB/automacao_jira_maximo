@@ -1,26 +1,24 @@
-import pandas as pd
 import os
+import pandas as pd
 from openpyxl.utils import get_column_letter
 from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 from openpyxl import load_workbook
 from openpyxl.comments import Comment
 
-sistemas_fechamento = [
-    "ARS", "NCR", "Athena", "Concentrador Fiscal", "Concsitef", "CTF",
-    "Gescom", "Gold", "Guepardo", "MasterSaf", "Pegasus Descontos Comerciais",
-    "SAD Contábil", "SAP", "SCE", "Sitef", "Storex", "TPLinux", "XRT"
-]
-
 def ler_jira(caminho_jira, colunas_esperadas):
     if not os.path.exists(caminho_jira):
+        print("⚠️ Arquivo Jira.xlsx não encontrado, ignorando dados do Jira.")
         return None
+
     try:
         df_jira = pd.read_excel(caminho_jira, sheet_name='Your Jira Issues', header=0)
         if all(col in df_jira.columns for col in colunas_esperadas):
             return df_jira[colunas_esperadas]
         else:
+            print("⚠️ Colunas esperadas não encontradas na aba 'Your Jira Issues', ignorando Jira.")
             return None
-    except:
+    except Exception as e:
+        print(f"⚠️ Erro ao ler Jira.xlsx: {e}. Ignorando dados do Jira.")
         return None
 
 def ler_maximo(caminho_pasta, colunas_esperadas):
@@ -70,21 +68,38 @@ def ler_maximo(caminho_pasta, colunas_esperadas):
         raise FileNotFoundError("Erro ao processar o Maximo")
     return df_maximo
 
-
 def aplicar_formatacao_excel(caminho_arquivo, abas):
     wb = load_workbook(caminho_arquivo)
+
     fonte_normal = Font(name="Montserrat", size=11)
     fonte_titulo = Font(name="Montserrat", size=12, bold=True)
     thin_side = Side(border_style="thin", color="C4C7C5")
     thin_border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
+
     cores = {
-        "Jira": {"header": "8989EB", "even": "C4C3F7", "odd": "E8E7FC"},
-        "Maximo": {"header": "8BC34A", "even": "FFFFFF", "odd": "EEF7E3"},
-        "Participantes": {"header": "4B7BEC", "even": "E6F0FF", "odd": "FFFFFF"},
-        "Verificação": {"header": "8989EB", "even": "C4C3F7", "odd": "E8E7FC"},  # mesma cor do Jira para manter padrão
+        "Jira": {
+            "header": "8989EB",
+            "even": "C4C3F7",
+            "odd":  "E8E7FC",
+        },
+        "Maximo": {
+            "header": "8BC34A",
+            "even": "FFFFFF",
+            "odd":  "EEF7E3",
+        },
+        "Participantes": {
+            "header": "4B7BEC",
+            "even": "E6F0FF",
+            "odd":  "FFFFFF",
+        },
+        "Verificação": {
+            "header": "FF9900",
+            "even": "FFF2CC",
+            "odd": "FFE699"
+        }
     }
 
-    comentarios = {
+    comentarios_participantes = {
         "A2": "Igor Campos , Reginaldo Tadashi , Newton Albuquerque , Adilson Bassani",
         "A3": "Clodoaldo Dias , Wesley Magalhães",
         "A4": "Roberto , Wagner",
@@ -98,15 +113,44 @@ def aplicar_formatacao_excel(caminho_arquivo, abas):
     for aba in abas:
         if aba not in wb.sheetnames:
             continue
+
         ws = wb[aba]
         cfg = cores.get(aba, {})
         fill_header = PatternFill(start_color=cfg.get("header", "CCCCCC"), fill_type="solid")
         fill_even = PatternFill(start_color=cfg.get("even", "FFFFFF"), fill_type="solid")
         fill_odd = PatternFill(start_color=cfg.get("odd", "FFFFFF"), fill_type="solid")
 
-        # Aba Participantes - conteúdo original e formatação
-        if aba == "Participantes":
-            # Limpar tudo antes de escrever
+        if aba in ["Jira", "Maximo"]:
+            for i, row in enumerate(ws.iter_rows(min_row=1, max_row=ws.max_row,
+                                                min_col=1, max_col=ws.max_column), 1):
+                for j, cell in enumerate(row, 1):
+                    cell.border = thin_border
+                    if i == 1:
+                        cell.fill = fill_header
+                        cell.font = fonte_titulo
+                        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+                    else:
+                        cell.font = fonte_normal
+                        cell.alignment = Alignment(horizontal='center' if j==1 else 'left', vertical='center', wrap_text=True, indent=1 if j != 1 else 0)
+                        if i % 2 == 0:
+                            cell.fill = fill_even
+                        else:
+                            cell.fill = fill_odd
+                        if cell.column_letter in ['F', 'G']:
+                            cell.number_format = "DD/MM/YYYY HH:mm"
+
+            for col in ws.columns:
+                max_length = 0
+                column = col[0].column_letter
+                for cell in col:
+                    if cell.value:
+                        max_length = max(max_length, len(str(cell.value)))
+                ws.column_dimensions[column].width = max(max_length + 2, 10)
+
+            ws.sheet_view.showGridLines = True
+
+        elif aba == "Participantes":
+            # Limpa planilha Participantes
             for row in ws.iter_rows():
                 for cell in row:
                     cell.value = None
@@ -127,10 +171,10 @@ def aplicar_formatacao_excel(caminho_arquivo, abas):
                 ["Telecom:", ""],
             ]
 
-            # Escrever a tabela participantes_obrigatorios
+            # Escreve tabela
             for i, row_data in enumerate(participantes_obrigatorios):
                 for j, value in enumerate(row_data):
-                    cell = ws.cell(row=i+1, column=j+1, value=value)
+                    cell = ws.cell(row=i + 1, column=j + 1, value=value)
                     if i == 0:
                         cell.fill = fill_header
                         cell.font = fonte_titulo
@@ -138,117 +182,132 @@ def aplicar_formatacao_excel(caminho_arquivo, abas):
                     else:
                         cell.fill = fill_odd if i % 2 else fill_even
                         cell.font = fonte_normal
-                        alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
-                        if j == 0:
-                            alignment = Alignment(horizontal='left', vertical='center', wrap_text=True, indent=1)
-                        cell.alignment = alignment
+                        cell.alignment = Alignment(horizontal='left', vertical='center', wrap_text=True, indent=1 if j==0 else 0)
                     cell.border = thin_border
 
-            # Adicionar comentários na coluna A
-            for coord, texto in comentarios.items():
-                if coord in ws:
-                    ws[coord].comment = Comment(texto, 'GPT')
+            # Comentários Participantes
+            for coord, texto in comentarios_participantes.items():
+                cell = ws[coord]
+                cell.comment = Comment(texto, "GPT")
 
-            # Ajustar largura colunas Participantes
+            # Ajusta largura colunas
             max_colunas = max(len(participantes_obrigatorios[0]), 2)
             for col_idx in range(1, max_colunas + 1):
-                max_length = 0
                 col_letter = get_column_letter(col_idx)
+                max_length = 0
                 for row_idx in range(1, len(participantes_obrigatorios) + 1):
                     cell = ws.cell(row=row_idx, column=col_idx)
                     if cell.value:
                         max_length = max(max_length, len(str(cell.value)))
-                adjusted_width = min(max(max_length + 5, 15), 50)
-                ws.column_dimensions[col_letter].width = adjusted_width
+                ws.column_dimensions[col_letter].width = max(max_length + 5, 15)
 
             ws.sheet_view.showGridLines = True
 
-        else:
-            # Para outras abas (Jira, Maximo, Verificação), aplicar formatação padrão
-            for i, row in enumerate(ws.iter_rows(min_row=1, max_row=ws.max_row,
-                                                min_col=1, max_col=ws.max_column), 1):
-                for j, cell in enumerate(row, 1):
-                    cell.border = thin_border
-                    if i == 1:
-                        cell.fill = fill_header
-                        cell.font = fonte_titulo
-                        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-                    else:
-                        cell.font = fonte_normal
-                        if j == 1:
-                            cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=False)
-                        else:
-                            cell.alignment = Alignment(horizontal='left', vertical='center', wrap_text=True, indent=1)
-                        if i % 2 == 0:
-                            cell.fill = fill_even
-                        else:
-                            cell.fill = fill_odd
-                        if cell.column_letter in ['F', 'G']:
-                            cell.number_format = "DD/MM/YYYY HH:mm"
+        elif aba == "Verificação":
+            # Modelo diferente para a aba Verificação
+            # Limpa planilha
+            for row in ws.iter_rows():
+                for cell in row:
+                    cell.value = None
+                    cell.fill = PatternFill(fill_type=None)
+                    cell.border = Border()
+                    cell.font = Font()
+                    cell.alignment = Alignment()
 
-            # Ajustar largura colunas com coluna A maior
-            for col in ws.columns:
-                max_length = 0
-                column = col[0].column_letter
-                for cell in col:
-                    if cell.value:
-                        max_length = max(max_length, len(str(cell.value)))
-                if column == 'A':
-                    adjusted_width = max(max_length + 5, 20)
-                else:
-                    adjusted_width = min(max(max_length + 2, 10), 50)
-                ws.column_dimensions[column].width = adjusted_width
+            # Cabeçalho customizado
+            headers = ["Chave", "Resumo", "Status", "Descrição", "Relator", "Planned start date", "Planned end date"]
+            for col_idx, header in enumerate(headers, 1):
+                cell = ws.cell(row=1, column=col_idx, value=header)
+                cell.fill = fill_header
+                cell.font = fonte_titulo
+                cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+                cell.border = thin_border
 
             ws.sheet_view.showGridLines = True
 
-    wb.save(caminho_arquivo)
+def gerar_planilha_verificacao(df_jira, df_maximo, nome_saida, colunas_finais):
+    sistemas = [
+        "ARS\\NCR", "Athena", "Concentrador Fiscal", "Concsitef", "CTF", "Gescom", "Gold",
+        "Guepardo", "MasterSaf", "Pegasus Descontos Comerciais", "SAD Contábil", "SAP",
+        "SCE", "Sitef", "Storex", "TPLinux", "XRT"
+    ]
 
-def verificar_sistemas_em_fechamento(df_jira, df_maximo, caminho_saida):
-    if df_jira is None:
-        df_jira = pd.DataFrame(columns=["Resumo", "Descrição", "Planned start date", "Planned end date"])
-
-    df_comb = pd.concat([df_jira, df_maximo], ignore_index=True)
-
-    def tem_sistema(texto):
-        texto = str(texto).lower()
-        return any(s.lower() in texto for s in sistemas_fechamento)
-
-    # Função para verificar se a data está no fechamento contábil
-    def esta_no_fechamento(data):
-        if pd.isna(data):
+    def filtro_sistema(texto):
+        if pd.isna(texto):
             return False
-        dia = data.day
-        # Considere dias finais do mês e dia 1 do próximo mês
-        return dia in [28, 29, 30, 31, 1]
+        for sistema in sistemas:
+            if sistema.lower() in str(texto).lower():
+                return True
+        return False
 
-    df_filtrado = df_comb[df_comb.apply(
-        lambda row: (
-            tem_sistema(row.get("Resumo", "")) or tem_sistema(row.get("Descrição", ""))
-        ) and (
-            esta_no_fechamento(row.get("Planned start date")) or
-            esta_no_fechamento(row.get("Planned end date"))
-        ), axis=1)]
+    import calendar
+    from datetime import timedelta
 
-    if df_filtrado.empty:
-        # Nenhuma change em conflito, não cria planilha Verificação
-        return
+    df_verificacao = pd.DataFrame(columns=colunas_finais)
 
-    # Criar aba Verificação
-    wb = load_workbook(caminho_saida)
-    if "Verificação" in wb.sheetnames:
-        ws = wb["Verificação"]
-        wb.remove(ws)
-    ws = wb.create_sheet("Verificação")
+    for df in [df_jira, df_maximo]:
+        if df is None:
+            continue
 
-    # Colocar cabeçalho
-    cabecalhos = list(df_filtrado.columns)
-    ws.append(cabecalhos)
+        for idx, row in df.iterrows():
+            if filtro_sistema(row["Resumo"]) or filtro_sistema(row["Descrição"]):
+                # Verifica datas Planned start date e Planned end date
+                for col_data in ["Planned start date", "Planned end date"]:
+                    data = row.get(col_data)
+                    if pd.isna(data):
+                        continue
+                    ultimo_dia_mes = data.replace(day=calendar.monthrange(data.year, data.month)[1])
+                    primeiro_dia_proximo_mes = (ultimo_dia_mes + timedelta(days=1))
 
-    # Preencher linhas
-    for _, row in df_filtrado.iterrows():
-        ws.append([row.get(col, '') for col in cabecalhos])
+                    if data.date() in [ultimo_dia_mes.date(), primeiro_dia_proximo_mes.date()] or \
+                       (data.date() >= ultimo_dia_mes.date() and data.date() <= primeiro_dia_proximo_mes.date()):
+                        df_verificacao = pd.concat([df_verificacao, pd.DataFrame([row[colunas_finais]])], ignore_index=True)
+                        break
 
-    wb.save(caminho_saida)
+    if df_verificacao.empty:
+        return None
 
-    # Aplicar formatação padrão (igual Jira e Maximo)
-    aplicar_formatacao_excel(caminho_saida, ["Verificação"])
+    return df_verificacao
+
+def padronizar_e_gerar_planilha(nome_saida='planilha_final.xlsx'):
+    caminho_pasta = os.path.join(os.getcwd(), "arquivos")
+    caminho_jira = os.path.join(caminho_pasta, "Jira.xlsx")
+
+    colunas_finais = [
+        "Chave", "Resumo", "Status", "Descrição", "Relator",
+        "Planned start date", "Planned end date"
+    ]
+
+    df_jira = ler_jira(caminho_jira, colunas_finais)
+    df_maximo = ler_maximo(caminho_pasta, colunas_finais)
+
+    abas_criadas = []
+
+    with pd.ExcelWriter(os.path.join(caminho_pasta, nome_saida), engine='openpyxl') as writer:
+        if df_jira is not None:
+            df_jira.to_excel(writer, sheet_name='Jira', index=False)
+            abas_criadas.append('Jira')
+        else:
+            print("⚠️ Dados Jira não foram encontrados ou estão inválidos. Aba 'Jira' não será criada.")
+
+        df_maximo.to_excel(writer, sheet_name='Maximo', index=False)
+        abas_criadas.append('Maximo')
+
+        # Aba Participantes com conteúdo e comentários
+        import numpy as np
+        df_dummy = pd.DataFrame(np.nan, index=range(10), columns=range(2))
+        df_dummy.to_excel(writer, sheet_name='Participantes', index=False, header=False)
+        abas_criadas.append('Participantes')
+
+        # Gera planilha Verificação (apenas se tiver dados válidos)
+        df_verificacao = gerar_planilha_verificacao(df_jira, df_maximo, nome_saida, colunas_finais)
+        if df_verificacao is not None and not df_verificacao.empty:
+            df_verificacao.to_excel(writer, sheet_name='Verificação', index=False)
+            abas_criadas.append('Verificação')
+        else:
+            print("Nenhuma alteração conflitante com fechamento contábil, aba 'Verificação' não será criada.")
+
+    aplicar_formatacao_excel(os.path.join(caminho_pasta, nome_saida), abas_criadas)
+
+if __name__ == "__main__":
+    padronizar_e_gerar_planilha()
