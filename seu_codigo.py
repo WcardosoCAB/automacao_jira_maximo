@@ -24,14 +24,20 @@ def ler_jira(caminho_jira, colunas_esperadas):
         return None
 
 def ler_maximo(caminho_pasta, colunas_esperadas):
+    import traceback
     caminho_xlsx = os.path.join(caminho_pasta, "Maximo.xlsx")
     caminho_csv = os.path.join(caminho_pasta, "Maximo.csv")
     df_maximo = None
+
     try:
         if os.path.exists(caminho_xlsx):
+            print(f"Tentando ler {caminho_xlsx}")
             df = pd.read_excel(caminho_xlsx, sheet_name='Maximo')
+            print("Colunas disponíveis no Excel:", df.columns.tolist())
         elif os.path.exists(caminho_csv):
+            print(f"Tentando ler {caminho_csv}")
             df = pd.read_csv(caminho_csv, encoding="utf-8", sep=",")
+            print("Colunas disponíveis no CSV:", df.columns.tolist())
         else:
             raise FileNotFoundError("Nenhum arquivo Maximo encontrado")
 
@@ -44,6 +50,8 @@ def ler_maximo(caminho_pasta, colunas_esperadas):
             "schedule_start": "Planned start date",
             "schedule_finish": "Planned end date"
         })
+        print("Colunas após renomear:", df.columns.tolist())
+
         df["Planned start date"] = pd.to_datetime(df["Planned start date"], errors="coerce", dayfirst=True)
         df["Planned end date"] = pd.to_datetime(df["Planned end date"], errors="coerce", dayfirst=True)
         df = df[df["Chave"] != "String"]
@@ -51,9 +59,12 @@ def ler_maximo(caminho_pasta, colunas_esperadas):
 
         if all(col in df.columns for col in colunas_esperadas):
             df_maximo = df[colunas_esperadas]
+        else:
+            print("⚠️ Algumas colunas esperadas estão faltando após filtragem.")
 
-    except:
-        pass
+    except Exception as e:
+        print("Erro no ler_maximo:", e)
+        print(traceback.format_exc())
 
     if df_maximo is None:
         raise FileNotFoundError("Erro ao processar o Maximo")
